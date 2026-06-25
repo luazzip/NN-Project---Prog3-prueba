@@ -9,6 +9,7 @@ namespace utec::tf::layers {
     public:
         void build(const utec::Shape& shape) override {
             input_shape_ = shape;
+            flat_size_ = shape.total_size();
             forward_done_ = false;
         }
         utec::Tensor<float> forward(const utec::Tensor<float>& x) override {
@@ -28,9 +29,12 @@ namespace utec::tf::layers {
         std::unique_ptr<Layer> clone() const override {
             return std::make_unique<Flatten>(*this);
         }
+        std::string type_name() const override { return "flatten"; }
+        utec::Shape output_shape() const override { return utec::Shape{flat_size_}; }
 
     private:
         utec::Shape input_shape_;
+        size_t flat_size_ = 0;
         bool forward_done_ = false;
     };
 }

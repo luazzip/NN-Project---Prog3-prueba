@@ -9,6 +9,7 @@ namespace utec {
     public:
         Shape() = default;
         Shape(std::initializer_list<size_t> values) : dims(values) {}
+        explicit Shape(std::vector<size_t> values) : dims(std::move(values)) {}
 
         size_t rank() const { return dims.size(); }
         size_t total_size() const {
@@ -29,3 +30,7 @@ namespace utec {
         }
     };
 }
+
+#include "tensor_ops.h"
+namespace utec::tf {}
+using namespace utec::tf;

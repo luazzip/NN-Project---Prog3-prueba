@@ -3,6 +3,8 @@
 #include <unordered_map>
 #include <memory>
 #include <string>
+#include <vector>
+#include <utility>
 
 namespace utec::tf::layers {
     using utec::Shape;
@@ -21,5 +23,14 @@ namespace utec::tf::layers {
             return {};
         }
         virtual std::unique_ptr<Layer> clone() const = 0;
+
+        virtual std::string type_name() const { return "layer"; }
+
+        virtual Shape output_shape() const { return {}; }
+
+        virtual std::vector<std::pair<utec::Tensor<float>*, utec::Tensor<float>*>>
+        trainable_parameters() {
+            return {};
+        }
     };
 }
