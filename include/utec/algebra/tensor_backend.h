@@ -39,26 +39,41 @@ namespace utec {
         T& flat(size_t i) { return data[i]; }
         const T& flat(size_t i) const { return data[i]; }
 
-        template<typename... Args>
-        T& operator()(Args... args) {
-            std::vector<size_t> idx = {(size_t)args...};
-            size_t pos = 0, mul = 1;
-            for (int i = idx.size()-1; i >= 0; i--) {
-                pos += idx[i] * mul;
-                mul *= shape_[i];
-            }
-            return data[pos];
+        template <typename... Idx>
+T& operator()(Idx... idx) {
+    std::array<size_t, sizeof...(Idx)> indices{static_cast<size_t>(idx)...};
+
+    if (indices.size() != shape_.rank()) {
+        throw std::out_of_range("cantidad incorrecta de indices");
+    }
+
+    for (size_t i = 0; i < indices.size(); ++i) {
+        if (indices[i] >= shape_[i]) {
+            throw std::out_of_range("indice fuera de rango");
         }
-        template<typename... Args>
-        const T& operator()(Args... args) const {
-            std::vector<size_t> idx = {(size_t)args...};
-            size_t pos = 0, mul = 1;
-            for (int i = idx.size()-1; i >= 0; i--) {
-                pos += idx[i] * mul;
-                mul *= shape_[i];
-            }
-            return data[pos];
+    }
+
+    size_t pos = offset(indices);
+    return data.at(pos);
+}
+
+template <typename... Idx>
+const T& operator()(Idx... idx) const {
+    std::array<size_t, sizeof...(Idx)> indices{static_cast<size_t>(idx)...};
+
+    if (indices.size() != shape_.rank()) {
+        throw std::out_of_range("cantidad incorrecta de indices");
+    }
+
+    for (size_t i = 0; i < indices.size(); ++i) {
+        if (indices[i] >= shape_[i]) {
+            throw std::out_of_range("indice fuera de rango");
         }
+    }
+
+    size_t pos = offset(indices);
+    return data.at(pos);
+}
     };
 }
 
