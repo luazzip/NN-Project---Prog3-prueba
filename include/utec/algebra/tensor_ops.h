@@ -5,6 +5,13 @@
 #include <cmath>
 #include <stdexcept>
 
+#if __has_include(<Eigen/Dense>)
+    #include <Eigen/Dense>
+    #define UTEC_HAS_EIGEN 1
+#else
+    #define UTEC_HAS_EIGEN 0
+#endif
+
 namespace utec::tf {
     using Shape = utec::Shape;
 
@@ -26,6 +33,15 @@ namespace utec::tf {
     }
 
     namespace ops {
+        struct Strides {
+            size_t h;
+            size_t w;
+        };
+
+        enum class Padding {
+            Valid
+        };
+
         inline Tensor<float> matmul(const Tensor<float>& a,
                                     const Tensor<float>& b) {
             if (a.shape().rank() != 2 || b.shape().rank() != 2) {
@@ -40,6 +56,29 @@ namespace utec::tf {
             const size_t n = b.shape()[1];
 
             Tensor<float> out(Shape{m, n});
+
+#if UTEC_HAS_EIGEN
+            Eigen::MatrixXf ma(static_cast<Eigen::Index>(m), static_cast<Eigen::Index>(k));
+            Eigen::MatrixXf mb(static_cast<Eigen::Index>(k), static_cast<Eigen::Index>(n));
+
+            for (size_t i = 0; i < m; ++i) {
+                for (size_t j = 0; j < k; ++j) {
+                    ma(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j)) = a(i, j);
+                }
+            }
+            for (size_t i = 0; i < k; ++i) {
+                for (size_t j = 0; j < n; ++j) {
+                    mb(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j)) = b(i, j);
+                }
+            }
+
+            Eigen::MatrixXf mc = ma * mb;
+            for (size_t i = 0; i < m; ++i) {
+                for (size_t j = 0; j < n; ++j) {
+                    out(i, j) = mc(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j));
+                }
+            }
+#else
             for (size_t i = 0; i < m; ++i) {
                 for (size_t j = 0; j < n; ++j) {
                     float acc = 0.0f;
@@ -49,6 +88,7 @@ namespace utec::tf {
                     out(i, j) = acc;
                 }
             }
+#endif
             return out;
         }
 
@@ -99,6 +139,22 @@ namespace utec::tf {
                 }
             }
             return out;
+        }
+
+        inline Tensor<float> conv2d(const Tensor<float>& input,
+                                    const Tensor<float>& kernel,
+                                    Strides strides,
+                                    Padding padding) {
+            if (strides.h == 0 || strides.w == 0) {
+                throw std::invalid_argument("stride invalido");
+            }
+            if (padding != Padding::Valid) {
+                throw std::invalid_argument("solo se soporta Padding::Valid");
+            }
+            if (strides.h != 1 || strides.w != 1) {
+                throw std::invalid_argument("solo se soporta stride 1");
+            }
+            return conv2d(input, kernel);
         }
     }
 }
