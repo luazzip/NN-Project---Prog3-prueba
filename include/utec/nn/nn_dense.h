@@ -125,6 +125,8 @@ namespace utec::tf::layers {
             bias_ = b;
         }
 
+        Activation activation() const { return activation_; }
+
     private:
         size_t units_;
         Activation activation_;
