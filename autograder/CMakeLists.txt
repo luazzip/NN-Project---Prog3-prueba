@@ -32,8 +32,10 @@ add_executable(${PROJECT_NAME}
     )
 
 if(UNIX AND NOT APPLE)
-    find_package(TBB)
-    target_link_libraries(${PROJECT_NAME} TBB::tbb)
+    find_package(TBB QUIET)
+    if(TBB_FOUND)
+        target_link_libraries(${PROJECT_NAME} TBB::tbb)
+    endif()
 endif()
 
 # Test files
