@@ -9,6 +9,7 @@
 #include "nn_flatten.h"
 #include "nn_loss.h"
 #include "nn_optimizer.h"
+#include "../io/model_serializer.h"
 
 #include <algorithm>
 #include <memory>
@@ -174,6 +175,43 @@ namespace utec::tf {
             return last_gradients_;
         }
 
+        void save(const std::string& path, const SaveOptions& options) {
+            io::ModelWriter writer(path);
+            writer.write_magic_and_version();
+            write_metadata(writer, options.metadata);
+            writer.write_shape(input_shape_);
+
+            writer.write_uint32(static_cast<uint32_t>(layers_.size()));
+            for (auto& layer_ptr : layers_) {
+                write_layer(writer, *layer_ptr);
+            }
+
+            metadata_ = options.metadata;
+        }
+
+        static Sequential load(const std::string& path) {
+            io::ModelReader reader(path);
+            reader.check_magic_and_version();
+
+            std::unordered_map<std::string, std::string> metadata = read_metadata(reader);
+            Shape input_shape = reader.read_shape();
+
+            Sequential model;
+            model.add(layers::Input(input_shape));
+
+            uint32_t layer_count = reader.read_uint32();
+            for (uint32_t layer_index = 0; layer_index < layer_count; ++layer_index) {
+                read_and_add_layer(reader, model);
+            }
+
+            model.metadata_ = metadata;
+            return model;
+        }
+
+        const std::unordered_map<std::string, std::string>& metadata() const {
+            return metadata_;
+        }
+
     private:
         void validate_labels(const Tensor<float>& pred,
                              const Tensor<float>& y) const {
@@ -207,6 +245,100 @@ namespace utec::tf {
             return out;
         }
 
+        static void write_metadata(io::ModelWriter& writer,
+                const std::unordered_map<std::string, std::string>& metadata) {
+            writer.write_uint32(static_cast<uint32_t>(metadata.size()));
+            for (const auto& entry : metadata) {
+                writer.write_string(entry.first);
+                writer.write_string(entry.second);
+            }
+        }
+
+        static std::unordered_map<std::string, std::string> read_metadata(
+                io::ModelReader& reader) {
+            uint32_t entry_count = reader.read_uint32();
+            std::unordered_map<std::string, std::string> metadata;
+            for (uint32_t entry_index = 0; entry_index < entry_count; ++entry_index) {
+                std::string key = reader.read_string();
+                std::string value = reader.read_string();
+                metadata.emplace(std::move(key), std::move(value));
+            }
+            return metadata;
+        }
+
+        static void write_layer(io::ModelWriter& writer, layers::Layer& layer) {
+            writer.write_string(layer.type_name());
+            writer.write_uint32(activation_to_code(activation_of(layer)));
+
+            auto parameters = layer.parameters();
+            writer.write_uint32(static_cast<uint32_t>(parameters.size()));
+            for (auto& named_tensor : parameters) {
+                writer.write_string(named_tensor.first);
+                writer.write_tensor(named_tensor.second);
+            }
+        }
+
+        static void read_and_add_layer(io::ModelReader& reader, Sequential& model) {
+            std::string type_name = reader.read_string();
+            Activation activation = activation_from_code(reader.read_uint32());
+
+            uint32_t parameter_count = reader.read_uint32();
+            std::unordered_map<std::string, Tensor<float>> parameters;
+            for (uint32_t parameter_index = 0; parameter_index < parameter_count;
+                 ++parameter_index) {
+                std::string name = reader.read_string();
+                parameters.emplace(std::move(name), reader.read_tensor());
+            }
+
+            if (type_name == "conv2d") {
+                const Tensor<float>& weights = parameters.at("weights");
+                size_t kernel_height = weights.shape()[0];
+                size_t kernel_width = weights.shape()[1];
+                size_t filters = weights.shape()[3];
+                model.add(layers::Conv2D(static_cast<int>(filters),
+                                         {kernel_height, kernel_width}, activation));
+                assign_parameters(*model.layers_.back(), parameters);
+            } else if (type_name == "dense") {
+                const Tensor<float>& weights = parameters.at("weights");
+                size_t units = weights.shape()[1];
+                model.add(layers::Dense(static_cast<int>(units), activation));
+                assign_parameters(*model.layers_.back(), parameters);
+            } else if (type_name == "flatten") {
+                model.add(layers::Flatten());
+            } else {
+                throw std::runtime_error("tipo de capa desconocido al cargar el modelo");
+            }
+        }
+
+        static void assign_parameters(layers::Layer& layer,
+                const std::unordered_map<std::string, Tensor<float>>& parameters) {
+            if (auto* dense = dynamic_cast<layers::Dense*>(&layer)) {
+                dense->set_weights(parameters.at("weights"));
+                dense->set_bias(parameters.at("bias"));
+            } else if (auto* conv = dynamic_cast<layers::Conv2D*>(&layer)) {
+                conv->set_weights(parameters.at("weights"));
+                conv->set_bias(parameters.at("bias"));
+            }
+        }
+
+        static Activation activation_of(layers::Layer& layer) {
+            if (auto* dense = dynamic_cast<layers::Dense*>(&layer)) {
+                return dense->activation();
+            }
+            if (auto* conv = dynamic_cast<layers::Conv2D*>(&layer)) {
+                return conv->activation();
+            }
+            return Activation::Linear;
+        }
+
+        static uint32_t activation_to_code(Activation activation) {
+            return static_cast<uint32_t>(activation);
+        }
+
+        static Activation activation_from_code(uint32_t code) {
+            return static_cast<Activation>(code);
+        }
+
         std::vector<std::unique_ptr<layers::Layer>> layers_;
         std::vector<std::string> names_;
         std::unordered_map<std::string, int> type_counts_;
@@ -216,6 +348,7 @@ namespace utec::tf {
         bool compiled_ = false;
         std::optional<optimizers::SGD> optimizer_;
         std::unordered_map<std::string, Tensor<float>> last_gradients_;
+        std::unordered_map<std::string, std::string> metadata_;
     };
 
 }
