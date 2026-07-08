@@ -2,103 +2,93 @@
 
 #include <filesystem>
 #include <fstream>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace utec::tf::monitoring {
 
-    struct RunResult {
-        std::string name;
-        std::vector<float> train_loss;
-        std::vector<float> val_accuracy;
-        std::string notes;
-    };
+struct ReportRun {
+    std::string name;
+    std::vector<float> train_loss;
+    std::vector<float> val_accuracy;
+    std::string notes;
+};
 
-    class ReportExporter {
-    public:
-        void add_run(const RunResult& run) {
-            if (run.train_loss.size() != run.val_accuracy.size()) {
-                throw std::invalid_argument(
-                    "train_loss y val_accuracy deben tener la misma cantidad de epocas");
-            }
-            recorded_runs.push_back(run);
+class ReportExporter {
+private:
+    std::vector<ReportRun> runs_;
+
+    static void validate_run(const ReportRun& run) {
+        if (run.name.empty()) {
+            throw std::invalid_argument("nombre de corrida vacio");
+        }
+        if (run.train_loss.empty() || run.val_accuracy.empty()) {
+            throw std::invalid_argument("series vacias");
+        }
+        if (run.train_loss.size() != run.val_accuracy.size()) {
+            throw std::invalid_argument("series inconsistentes");
+        }
+    }
+
+    static void ensure_parent_directory(const std::string& path) {
+        std::filesystem::path p(path);
+        if (p.has_parent_path()) {
+            std::filesystem::create_directories(p.parent_path());
+        }
+    }
+
+public:
+    void add_run(const ReportRun& run) {
+        validate_run(run);
+        runs_.push_back(run);
+    }
+
+    void write_markdown(const std::string& path) const {
+        if (runs_.empty()) {
+            throw std::logic_error("no hay corridas registradas");
         }
 
-        void write_markdown(const std::string& path) const {
-            fail_if_there_are_no_runs();
-            create_parent_directory(path);
-            std::ofstream file(path);
-            if (!file.is_open()) {
-                throw std::runtime_error("no se pudo crear el archivo markdown: " + path);
-            }
-            file << build_markdown_report();
+        ensure_parent_directory(path);
+        std::ofstream file(path);
+        if (!file.is_open()) {
+            throw std::runtime_error("no se pudo crear markdown");
         }
 
-        void write_csv(const std::string& path) const {
-            fail_if_there_are_no_runs();
-            create_parent_directory(path);
-            std::ofstream file(path);
-            if (!file.is_open()) {
-                throw std::runtime_error("no se pudo crear el archivo csv: " + path);
-            }
-            file << build_csv_report();
+        file << "# Reporte Feature 4\n\n";
+        file << "| Corrida | Epocas | Loss final | Accuracy final | Notas |\n";
+        file << "|---|---:|---:|---:|---|\n";
+        for (const auto& run : runs_) {
+            file << "| " << run.name << " | "
+                 << run.train_loss.size() << " | "
+                 << run.train_loss.back() << " | "
+                 << run.val_accuracy.back() << " | "
+                 << run.notes << " |\n";
+        }
+    }
+
+    void write_csv(const std::string& path) const {
+        if (runs_.empty()) {
+            throw std::logic_error("no hay corridas registradas");
         }
 
-    private:
-        void fail_if_there_are_no_runs() const {
-            if (recorded_runs.empty()) {
-                throw std::logic_error("no hay corridas registradas para exportar");
-            }
+        ensure_parent_directory(path);
+        std::ofstream file(path);
+        if (!file.is_open()) {
+            throw std::runtime_error("no se pudo crear csv");
         }
 
-        static void create_parent_directory(const std::string& path) {
-            std::filesystem::path parent_directory = std::filesystem::path(path).parent_path();
-            if (!parent_directory.empty()) {
-                std::filesystem::create_directories(parent_directory);
+        file << "name,epoch,train_loss,val_accuracy,notes\n";
+        for (const auto& run : runs_) {
+            for (size_t i = 0; i < run.train_loss.size(); ++i) {
+                file << run.name << ','
+                     << (i + 1) << ','
+                     << run.train_loss[i] << ','
+                     << run.val_accuracy[i] << ','
+                     << run.notes << '\n';
             }
         }
-
-        std::string build_markdown_report() const {
-            std::ostringstream report;
-            report << "# Reporte de experimentos\n\n";
-            report << "| Corrida | Epocas | Loss final | Accuracy final | Notas |\n";
-            report << "| --- | --- | --- | --- | --- |\n";
-            for (const RunResult& run : recorded_runs) {
-                report << "| " << run.name
-                       << " | " << run.train_loss.size()
-                       << " | " << final_value(run.train_loss)
-                       << " | " << final_value(run.val_accuracy)
-                       << " | " << run.notes
-                       << " |\n";
-            }
-            return report.str();
-        }
-
-        std::string build_csv_report() const {
-            std::ostringstream report;
-            report << "name,epochs,final_train_loss,final_val_accuracy,notes\n";
-            for (const RunResult& run : recorded_runs) {
-                report << run.name << ","
-                       << run.train_loss.size() << ","
-                       << final_value(run.train_loss) << ","
-                       << final_value(run.val_accuracy) << ","
-                       << run.notes << "\n";
-            }
-            return report.str();
-        }
-
-        static float final_value(const std::vector<float>& series) {
-            if (series.empty()) {
-                return 0.0f;
-            }
-            return series.back();
-        }
-
-        std::vector<RunResult> recorded_runs;
-    };
+    }
+};
 
 }
-
-using namespace utec::tf;
