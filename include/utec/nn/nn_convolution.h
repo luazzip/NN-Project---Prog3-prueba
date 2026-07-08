@@ -49,6 +49,8 @@ namespace utec::tf::layers {
         void set_weights(const utec::Tensor<float>& w) { weights_ = w; }
         void set_bias(const utec::Tensor<float>& b) { bias_ = b; }
 
+        Activation activation() const { return activation_; }
+
         utec::Tensor<float> forward(const utec::Tensor<float>& x) override {
             last_input_ = x;
             size_t batch = x.shape()[0];
